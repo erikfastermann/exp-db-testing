@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -18,22 +19,25 @@ import (
 //   - Split read and read-write?
 //   - Analysis Queries
 type Tx struct {
-	db   *sql.DB
-	tx   *sql.Tx // might be nil
+	db   *sqlx.DB
+	tx   *sqlx.Tx // might be nil
 	opts *sql.TxOptions
 }
 
 // TxFinalizer is usually run after a handler is finished.
 type TxFinalizer func(success bool) error
 
-func PrepareTx(db *sql.DB, opts *sql.TxOptions) (*Tx, TxFinalizer) {
+func PrepareTx(db *sqlx.DB, readOnly bool) (*Tx, TxFinalizer) {
 	tx := &Tx{
-		db:   db,
-		opts: opts,
+		db: db,
+		opts: &sql.TxOptions{
+			Isolation: sql.LevelSerializable,
+			ReadOnly:  false,
+		},
 	}
 	return tx, func(success bool) error {
 		// TODO: what happens if we don't commit or rollback anything?
-		if opts.ReadOnly || tx.tx == nil {
+		if tx.opts.ReadOnly || tx.tx == nil {
 			return nil
 		}
 		if success {
@@ -43,6 +47,8 @@ func PrepareTx(db *sql.DB, opts *sql.TxOptions) (*Tx, TxFinalizer) {
 	}
 }
 
+const txIDName = "events.tx_id"
+
 // TODO:
 // kinda confusing using the random context passed in here,
 // because it is used for the whole transaction.
@@ -50,9 +56,25 @@ func (tx *Tx) begin(ctx context.Context) error {
 	if tx.tx != nil {
 		return nil
 	}
-	var err error
-	tx.tx, err = tx.db.BeginTx(ctx, tx.opts)
-	return err
+	txx, err := tx.db.BeginTxx(ctx, tx.opts)
+	if err != nil {
+		return err
+	}
+
+	// Sadly we have to split this into two queries,
+	// because set only supports concrete values.
+	var txID int64
+	txIDSQL := fmt.Sprintf("select nextval('%s')", txIDName)
+	if err := txx.GetContext(ctx, &txID, txIDSQL); err != nil {
+		return err
+	}
+	setSQL := fmt.Sprintf("set local %s = %d", txSettingName, txID)
+	_, err = txx.ExecContext(ctx, setSQL)
+	if err != nil {
+		return err
+	}
+	tx.tx = txx
+	return nil
 }
 
 // Query runs a query in the transaction, mapping the result rows to out.

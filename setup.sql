@@ -7,9 +7,12 @@ create schema if not exists events;
 -- TODO: not repeatable
 -- create type action as enum('insert', 'update', 'delete');
 
+create sequence if not exists events.tx_id as bigint;
+
 -- TODO:
 --   - store extra information for each transaction
 --   - detach from postgres types
+--   - change column order, probably table_id, row_id, tx_id, column_id
 create table if not exists events.events(
     tx_id bigint not null,
     table_id oid not null,

@@ -20,7 +20,8 @@ const (
 // The user should only have permissions for that schema.
 // The events.events table is assumed to exist.
 
-const createTriggerSQLFormat = `create trigger events_%s
+// TODO: or replace not necessary, if we remove all triggers at the start
+const createTriggerSQLFormat = `create or replace trigger events_%s
 after %s on %s.%s
 for each row
 execute function %s.events_%s_function()`
@@ -65,6 +66,15 @@ func deleteTriggerSQL(tableName string) string {
 	)
 }
 
+type Event struct {
+	TxID     int64  `db:"tx_id"`
+	TableID  int    `db:"table_id"`  // TODO: size later
+	ColumnID int    `db:"column_id"` // TODO: size later
+	RowID    int64  `db:"row_id"`
+	Action   string `db:"action"` // TODO: type
+	Value    string `db:"value"`  // TODO: type
+}
+
 const txSettingName = "tx_vars.tx_id"
 
 // TODO:
@@ -76,7 +86,7 @@ const eventsInsertSQLFormat = `insert into %s.events(tx_id, table_id, column_id,
 values(current_setting('` + txSettingName + `')::bigint, %d, %d, new.id, '%s', to_json(new.%s));
 `
 
-const createTriggerFunctionSQLFormat = `create function %s.events_%s_function()
+const createTriggerFunctionSQLFormat = `create or replace function %s.events_%s_function()
 returns trigger
 as $$
 begin

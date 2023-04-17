@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
 
@@ -27,18 +28,21 @@ func run() error {
 	// TODO:
 	//   - configurable
 	//   - separate users for DDL and DQL/DML
-	db, err := sql.Open("postgres", "user=erik dbname=db1 sslmode=disable")
+	db, err := sqlx.Open("postgres", "user=erik dbname=db1 sslmode=disable")
 	if err != nil {
 		return err
 	}
 	if err := initDB(db); err != nil {
 		return err
 	}
+	if err := txTest(db); err != nil {
+		return err
+	}
 	panic("TODO")
 	// http.ListenAndServe(":8080", http.HandlerFunc(handlerFunc))
 }
 
-func initDB(db *sql.DB) error {
+func initDB(db *sqlx.DB) error {
 	// TODO:
 	// ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	// defer cancel()
@@ -57,6 +61,20 @@ func initDB(db *sql.DB) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func txTest(db *sqlx.DB) error {
+	ctx := context.Background() // TODO
+	tx, _ := PrepareTx(db, false)
+	if err := tx.Exec(ctx, "insert into data.foo(id, bar) values(1, 'blub')"); err != nil {
+		return err
+	}
+	var events []Event
+	if err := tx.Query(ctx, &events, "select * from events.events"); err != nil {
+		return err
+	}
+	fmt.Println(events)
+	return nil
 }
 
 func handlerFunc(w http.ResponseWriter, r *http.Request) {

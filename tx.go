@@ -20,8 +20,9 @@ import (
 //   - Analysis Queries
 type Tx struct {
 	db   *sqlx.DB
-	tx   *sqlx.Tx // might be nil
 	opts *sql.TxOptions
+	tx   *sqlx.Tx // might be nil
+	txID int64    // zero value if not started
 }
 
 // TxFinalizer is usually run after a handler is finished.
@@ -74,7 +75,12 @@ func (tx *Tx) begin(ctx context.Context) error {
 		return err
 	}
 	tx.tx = txx
+	tx.txID = txID
 	return nil
+}
+
+func (tx *Tx) TxID() (txID int64, ok bool) {
+	return tx.txID, tx.tx != nil
 }
 
 // Query runs a query in the transaction, mapping the result rows to out.

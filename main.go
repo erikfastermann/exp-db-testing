@@ -65,12 +65,25 @@ func initDB(db *sqlx.DB) error {
 
 func txTest(db *sqlx.DB) error {
 	ctx := context.Background() // TODO
-	tx, _ := PrepareTx(db, false)
-	if err := tx.Exec(ctx, "insert into data.foo(id, bar) values(1, 'blub')"); err != nil {
+	tx, finalizer := PrepareTx(db, false)
+	defer finalizer(false) // Always rolled back
+
+	err := tx.Exec(ctx, "insert into data.foo(id, bar) values(1, 'blub')")
+	if err != nil {
 		return err
 	}
 	var events []Event
-	if err := tx.Query(ctx, &events, "select * from events.events"); err != nil {
+	txID, ok := tx.TxID()
+	if !ok {
+		panic("unreachable")
+	}
+	err = tx.Query(
+		ctx,
+		&events,
+		"select * from events.events where tx_id >= $1",
+		txID,
+	)
+	if err != nil {
 		return err
 	}
 	fmt.Println(events)
